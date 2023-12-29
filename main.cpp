@@ -33,6 +33,18 @@ __global__ void testAtomic(const float *in, float *out)
   atomicAdd(&(out[blockIdx.x * 4 + 3]), in[id*4+3]);
 }
 
+void validate(const std::vector<float> &in, std::vector<float> &out)
+{
+  for (int i=0; i<ATOMIC_BLOCK_CNT; i++){
+    for (int j=0; j<ATOMIC_THREAD_CNT; j++){
+      int id = i*ATOMIC_THREAD_CNT + j;
+      for (int c=0; c<3; c++){
+          out[i * 4 + c] += in[id * 4+c] * in[id*4+3];
+      }
+      out[i*4+3] += in[id * 4 + 3];
+    }
+  }
+}
 int main(int argc, char* argv[])
 {
   hiprandStateXORWOW_t* d_states;
@@ -76,12 +88,23 @@ int main(int argc, char* argv[])
 			.count();
 
 
-  float val;
-  status = hipMemcpy(&val, d_atomic_test, sizeof(float), hipMemcpyDeviceToHost);
+  std::vector<float> h_atomic_test(ATOMIC_BLOCK_CNT*4);
+  status = hipMemcpy(h_atomic_test.data(), d_atomic_test, sizeof(float)*ATOMIC_BLOCK_CNT*4, hipMemcpyDeviceToHost);
   if (status != hipSuccess)
     std::cout << "Error memcpy d_atomic_test: " << hipGetErrorString(status) << std::endl;
 
+std::vector<float> validate_atomic(ATOMIC_BLOCK_CNT*4, 0);
+  validate(hostResults, validate_atomic);
+  int cnt = 0;
+  for (int i=0; i<validate_atomic.size(); i++){
+    if (std::abs(h_atomic_test[i] - validate_atomic[i]) > 1e-3){
+      if (cnt < 5)
+       std::cout << i << " " << h_atomic_test[i] << " " << validate_atomic[i] << " " << std::abs(h_atomic_test[i] - validate_atomic[i]) << std::endl;
+      cnt++;
+    }
+  }
   std::cout << std::fixed << std::setprecision(2);
-  std::cout << "val: " << val << " kernel_time (hipEventElapsedTime) " << std::setw(5) << atomic_time << "ms" << std::endl;
+  std::cout << "val: " << h_atomic_test[0] << " kernel_time (hipEventElapsedTime) " << std::setw(5) << atomic_time << "ms" << std::endl;
+  std::cout << "Number of invalid results: " << cnt << std::endl;
   return 0;
 }
