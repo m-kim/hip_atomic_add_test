@@ -67,14 +67,14 @@ int main(int argc, char* argv[])
 
   float *d_atomic_test;
   
-  hipMalloc(&d_atomic_test, sizeof(float)*ATOMIC_BLOCK_CNT*sizeof(float)*4);
+  hipMalloc(&d_atomic_test, sizeof(float)*ATOMIC_BLOCK_CNT*4);
   
   std::chrono::time_point<std::chrono::steady_clock> start_ct1;
 	std::chrono::time_point<std::chrono::steady_clock> stop_ct1;
 
 	start_ct1 = std::chrono::steady_clock::now();
 
-  hipMemset(d_atomic_test, 0, sizeof(float)*ATOMIC_BLOCK_CNT*sizeof(float)*4);
+  hipMemset(d_atomic_test, 0, sizeof(float)*ATOMIC_BLOCK_CNT*4);
   testAtomic<<<ATOMIC_BLOCK_CNT, ATOMIC_THREAD_CNT>>>(d_results,d_atomic_test);
   hipStreamSynchronize(0);
   hipError_t status = hipGetLastError();
