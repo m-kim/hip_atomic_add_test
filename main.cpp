@@ -4,7 +4,7 @@
 #include <iomanip>
 #include <iostream>
 #define ATOMIC_THREAD_CNT 1024
-#define ATOMIC_BLOCK_CNT 32768
+#define ATOMIC_BLOCK_CNT 65536
 
 
 __global__ void setup(hiprandStateXORWOW_t *state)
@@ -29,8 +29,16 @@ __global__ void testAtomic(const float *in, float *out)
 
   for (int c=0; c<3; c++){
       atomicAdd(&(out[blockIdx.x * 4 + c]), in[id * 4+c] * in[id*4+3]);
+#if 0
+      unsafeAtomicAdd(&(out[blockIdx.x * 4 + c]), in[id * 4+c] * in[id*4+3]);
+      atomicAddNoRet(&(out[blockIdx.x * 4 + c]), in[id * 4+c] * in[id*4+3]);
+#endif
   }
   atomicAdd(&(out[blockIdx.x * 4 + 3]), in[id*4+3]);
+#if 0
+  atomicAddNoRet(&(out[blockIdx.x * 4 + 3]), in[id*4+3]);
+  unsafeAtomicAdd(&(out[blockIdx.x * 4 + 3]), in[id*4+3]);
+#endif
 }
 
 void validate(const std::vector<float> &in, std::vector<float> &out)
