@@ -49,7 +49,7 @@ int main(int argc, char* argv[])
 {
   hiprandStateXORWOW_t* d_states;
   hipMalloc((void **) &d_states, sizeof(hiprandStateXORWOW_t) * ATOMIC_BLOCK_CNT);
-  setup<<<32, ATOMIC_BLOCK_CNT/32>>>(d_states);
+  setup<<<ATOMIC_BLOCK_CNT/32, 32>>>(d_states);
 
   float* d_results;
   hipMalloc((void **) &d_results, sizeof(float) * ATOMIC_THREAD_CNT * ATOMIC_BLOCK_CNT*4);
@@ -57,7 +57,7 @@ int main(int argc, char* argv[])
   std::vector<float> hostResults(ATOMIC_THREAD_CNT * ATOMIC_BLOCK_CNT*4);
 
   for (int i=0; i<4; i++)
-    generateRand<<<32, ATOMIC_BLOCK_CNT/32>>>(d_states, d_results+ATOMIC_THREAD_CNT * ATOMIC_BLOCK_CNT*i, ATOMIC_THREAD_CNT);
+    generateRand<<<ATOMIC_BLOCK_CNT/32, 32>>>(d_states, d_results+ATOMIC_THREAD_CNT * ATOMIC_BLOCK_CNT*i, ATOMIC_THREAD_CNT);
   // Copy results
   hipMemcpy(hostResults.data(), d_results, hostResults.size() * sizeof(float), hipMemcpyDeviceToHost);
 
