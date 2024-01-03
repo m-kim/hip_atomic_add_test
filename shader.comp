@@ -1,34 +1,27 @@
 
 #version 450
+#extension GL_EXT_shader_atomic_float : enable
 
 layout(binding = 0) buffer In {
-   uint values[ ];
+   float values[ ];
 };
 
-layout (local_size_x = 1, local_size_y = 1, local_size_z = 1) in;
+layout(binding = 1) buffer Out {
+   float out_values[ ];
+};
+
+layout (local_size_x = 1024, local_size_y = 1, local_size_z = 1) in;
 
 layout (constant_id = 0) 
 
-const uint BUFFER_ELEMENTS = 32;
-
-uint fibonacci(uint n) {
-	if(n <= 1){
-		return n;
-	}
-	uint curr = 1;
-	uint prev = 1;
-	for(uint i = 2; i < n; ++i) {
-		uint temp = curr;
-		curr += prev;
-		prev = temp;
-	}
-	return curr;
-}
-
 void main() 
 {
-	uint index = gl_GlobalInvocationID.x;
-	if (index >= BUFFER_ELEMENTS) 
-		return;	
-	values[index] = fibonacci(values[index]);
+	uint id = gl_GlobalInvocationID.x;
+
+	for (int c=0; c<3; c++){
+		atomicAdd(out_values[gl_WorkGroupID.x * 4 + c], values[id * 4+c] * values[id*4+3]);
+	}
+	atomicAdd(out_values[gl_WorkGroupID.x * 4 + 3], values[id*4+3]);
+	// float tmp = values[gl_WorkGroupID.x * gl_WorkGroupSize.x + gl_LocalInvocationID.x];
+	// atomicAdd(out_values[gl_WorkGroupID.x], tmp);
 }
