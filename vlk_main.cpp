@@ -15,6 +15,7 @@
 #include <iomanip>
 #include <chrono>
 #include <vulkan/vulkan.h>
+#include <array>
 
 #define ATOMIC_THREAD_CNT 1024
 #define ATOMIC_BLOCK_CNT 32768
@@ -630,12 +631,29 @@ public:
 		/*
 			Command buffer creation (for compute work submission)
 		*/
+		VkQueryPool time_query_pool;
 		{
+			std::array<uint64_t,2> time_stamp_with_availibility;
+
+			VkQueryPoolCreateInfo createInfo{};
+			createInfo.sType = VK_STRUCTURE_TYPE_QUERY_POOL_CREATE_INFO;
+			createInfo.pNext = nullptr; // Optional
+			createInfo.flags = 0; // Reserved for future use, must be 0!
+
+			createInfo.queryType = VK_QUERY_TYPE_TIMESTAMP;
+			createInfo.queryCount = time_stamp_with_availibility.size();
+
+			VkResult result = vkCreateQueryPool(device, &createInfo, nullptr, &time_query_pool);
+			if (result != VK_SUCCESS)
+			{
+				throw std::runtime_error("Failed to create time query pool!");
+			}
+
 			VkCommandBufferBeginInfo cmdBufInfo {};
 			cmdBufInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
 
 			VK_CHECK_RESULT(vkBeginCommandBuffer(commandBuffer, &cmdBufInfo));
-
+			vkCmdResetQueryPool(commandBuffer, time_query_pool, 0, static_cast<uint32_t>(time_stamp_with_availibility.size()));
 			// Barrier to ensure that input buffer transfer is finished before compute shader reads from it
 			VkBufferMemoryBarrier bufferBarrier {};
 			bufferBarrier.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER;
@@ -657,27 +675,10 @@ public:
 
 			vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, pipeline);
 			vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, pipelineLayout, 0, 1, &descriptorSet, 0, 0);
-
+			vkCmdWriteTimestamp(commandBuffer, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, time_query_pool, 0 );
 			vkCmdDispatch(commandBuffer, ATOMIC_BLOCK_CNT * ATOMIC_THREAD_CNT, 1, 1);
-
-			// Barrier to ensure that shader writes are finished before buffer is read back from GPU
-			bufferBarrier.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
-			bufferBarrier.dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
-			bufferBarrier.buffer = deviceBufferIn;
-			bufferBarrier.size = VK_WHOLE_SIZE;
-			bufferBarrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-			bufferBarrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-
-			vkCmdPipelineBarrier(
-				commandBuffer,
-				VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
-				VK_PIPELINE_STAGE_TRANSFER_BIT,
-				0,
-				0, nullptr,
-				1, &bufferBarrier,
-				0, nullptr);
-
-
+			vkCmdWriteTimestamp(commandBuffer, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT,  time_query_pool, 1);
+			
 
 			VkBufferCopy copyRegionOut = {};
 			copyRegionOut.size = bufferSizeOut;
@@ -715,6 +716,20 @@ public:
 			start_ct1 = std::chrono::steady_clock::now();
 			VK_CHECK_RESULT(vkQueueSubmit(queue, 1, &computeSubmitInfo, fence));
 			VK_CHECK_RESULT(vkWaitForFences(device, 1, &fence, VK_TRUE, UINT64_MAX));
+
+			vkGetQueryPoolResults(
+				device,
+				time_query_pool,
+				0,
+				2,
+				time_stamp_with_availibility.size() * sizeof(uint64_t),
+				time_stamp_with_availibility.data(),
+				sizeof(uint64_t),
+				VK_QUERY_RESULT_64_BIT | VK_QUERY_RESULT_WAIT_BIT);
+			VkPhysicalDeviceLimits device_limits = deviceProperties.limits;
+			if (time_stamp_with_availibility[0] != 0) {
+				std::cout << "Timestamp = " << (time_stamp_with_availibility[1] -time_stamp_with_availibility[0])* device_limits.timestampPeriod / 1000000.0f << " " << std::endl;
+			}
 			stop_ct1 = std::chrono::steady_clock::now();
 			float atomic_time =
 			std::chrono::duration<float, std::milli>(stop_ct1 - start_ct1)
@@ -758,6 +773,8 @@ public:
 		vkDestroyBuffer(device, hostBufferIn, nullptr);
 		vkFreeMemory(device, hostMemoryIn, nullptr);
 
+
+		vkDestroyQueryPool(device, time_query_pool, nullptr);
 
 		vkDestroyBuffer(device, deviceBufferOut, nullptr);
 		vkFreeMemory(device, deviceMemoryOut, nullptr);
